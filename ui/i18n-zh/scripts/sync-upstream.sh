@@ -40,3 +40,13 @@ node ui/i18n-zh/scripts/extract-strings.mjs --todo
 
 echo
 echo "完成。把新增词条补进 ui/i18n-zh/dict/zh-CN.json 后提交即可。"
+
+# 推送：优先用 fork 远程（你的账号），没有就退回 origin
+PUSH_REMOTE="origin"
+if git remote get-url fork >/dev/null 2>&1; then
+	PUSH_REMOTE="fork"
+fi
+echo
+echo "==> 推送到 $PUSH_REMOTE"
+echo "   git add -A && git commit -m 'chore(i18n): 同步上游并补充词条'"
+echo "   git push $PUSH_REMOTE zh-cn"

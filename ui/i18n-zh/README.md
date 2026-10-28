@@ -2,6 +2,9 @@
 
 给 [maximhq/bifrost](https://github.com/maximhq/bifrost) 的 Web 控制台加中文界面，**不改任何上游组件代码**。
 
+> **仓库地址**：<https://github.com/sagezhj/bifrost>（fork 自 maximhq/bifrost，汉化在 `zh-cn` 分支）
+> **远程布局**：`upstream` → maximhq/bifrost（拉更新）、`fork` → sagezhj/bifrost（推汉化）
+
 ---
 
 ## 为什么这么做
