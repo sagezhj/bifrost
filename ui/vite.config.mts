@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import { zhI18n } from "./i18n-zh/vite-plugin-zh";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isEnterpriseBuild = fs.existsSync(path.join(__dirname, "app", "enterprise"));
@@ -27,6 +28,8 @@ export default defineConfig({
 		}),
 		react(),
 		tailwindcss(),
+		// 中文语言包（外挂式，不改任何上游组件；BIFROST_ZH=0 可关闭）
+		zhI18n(),
 	],
 	resolve: {
 		// Enterprise UI source is symlinked into ./app/enterprise; preserving symlinks
