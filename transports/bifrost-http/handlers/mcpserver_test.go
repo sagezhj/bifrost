@@ -576,6 +576,54 @@ func TestMCPGateway_SlugEndpoint(t *testing.T) {
 	}
 }
 
+// refusingToolManager refuses a call the request may not make, as core does after the MCP pre-hooks,
+// and counts the calls that reached it.
+type refusingToolManager struct {
+	echoToolManager
+	calls atomic.Int32
+}
+
+func (r *refusingToolManager) ExecuteChatMCPTool(ctx context.Context, call *schemas.ChatAssistantMessageToolCall) (*schemas.ChatMessage, *schemas.BifrostError) {
+	r.calls.Add(1)
+	if len(r.GetAvailableMCPTools(ctx)) == 0 {
+		return nil, &schemas.BifrostError{Error: &schemas.ErrorField{Message: "tool 'gw-echo' is not permitted (filtered by request context)"}}
+	}
+	return r.echoToolManager.ExecuteChatMCPTool(ctx, call)
+}
+
+// A narrowed caller's tools/call for a tool it cannot see still reaches Bifrost, so the pre-hooks
+// (governance, logging) run and the refusal says why, instead of mcp-go answering "not found".
+func TestMCPGateway_NarrowedToolCallReachesBifrost(t *testing.T) {
+	tm := &refusingToolManager{echoToolManager: echoToolManager{fakeInstructionsToolManager{}}}
+	h, err := NewMCPServerHandler(context.Background(), &lib.Config{ClientConfig: &configstore.ClientConfig{}}, tm, nil, nil, nil)
+	require.NoError(t, err)
+	h.admitter = slugAdmitter{vmcps: map[string][]string{"nothing": {"other-tool"}}}
+	baseURL := startGateway(t, h)
+
+	ctx := context.Background()
+	tr, err := transport.NewStreamableHTTP(baseURL + "/mcp/nothing")
+	require.NoError(t, err)
+	c := client.NewClient(tr)
+	require.NoError(t, c.Start(ctx))
+	t.Cleanup(func() { _ = c.Close() })
+	_, err = c.Initialize(ctx, mcp.InitializeRequest{})
+	require.NoError(t, err)
+
+	tools, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, tools.Tools, "tools/list stays narrowed")
+	assert.Empty(t, tools.NextCursor, "tools/list is not paginated: narrowListedTools narrows the one page")
+
+	call := mcp.CallToolRequest{}
+	call.Params.Name = "gw-echo"
+	res, err := c.CallTool(ctx, call)
+	require.NoError(t, err, "the refusal is a tool result, not a JSON-RPC error")
+	assert.True(t, res.IsError)
+	require.Len(t, res.Content, 1)
+	assert.Contains(t, res.Content[0].(mcp.TextContent).Text, "filtered by request context")
+	assert.Equal(t, int32(1), tm.calls.Load(), "the call reached Bifrost")
+}
+
 // servingToolManager adds one prompt, resource and resource template from the "gw" client, visible
 // exactly when gw-echo is.
 type servingToolManager struct {
