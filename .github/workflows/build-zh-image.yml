@@ -1,0 +1,68 @@
+name: build-zh-image
+
+# 构建带简体中文语言包的 Bifrost 镜像，推送到 GitHub 容器镜像仓库（GHCR）
+# 汉化通过 ui/vite.config.mts 里的构建插件在编译期注入，无需额外改 Dockerfile
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [zh-cn]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: transports/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:zh-cn
+            ${{ env.IMAGE }}:zh-cn-${{ github.run_number }}
+          build-args: |
+            VERSION=zh-cn-${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: 冒烟测试（界面必须真的是中文）
+        run: |
+          set -euxo pipefail
+          TAG="${{ env.IMAGE }}:zh-cn-${{ github.run_number }}"
+          docker pull "$TAG"
+          docker run -d --name bf -p 8080:8080 "$TAG"
+          for i in $(seq 1 45); do
+            curl -fsS http://127.0.0.1:8080/health && break || sleep 2
+          done
+          curl -fsSL http://127.0.0.1:8080/ -o /tmp/index.html
+          grep -q 'lang="zh-CN"' /tmp/index.html
+          for a in $(grep -oE '/assets/[A-Za-z0-9._-]+\.js' /tmp/index.html | sort -u); do
+            if curl -fsS "http://127.0.0.1:8080$a" | grep -q '服务商'; then
+              echo "OK: 中文词条已打进 $a"
+              exit 0
+            fi
+          done
+          echo "FAIL: 未找到中文词条"
+          docker logs bf --tail 50
+          exit 1
